@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#203738">
+  <meta name="description" content="A technical paper on Harbor’s private, on-device architecture across AVFoundation, Speech, Core ML, Foundation Models, Background Tasks, and Apple Files.">
+  <title>The iPhone Is the System — How Harbor Works</title>
+  <link rel="icon" href="assets/app-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="technical-paper.css">
+</head>
+<body class="paper-page">
+  <a class="skip-link" href="#paper">Skip to the paper</a>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="Harbor home"><img src="assets/app-icon.png" alt="" width="42" height="42"><span>Harbor</span></a>
+    <nav aria-label="Primary"><a href="index.html#how-it-works">How it works</a><a href="index.html#information">Information</a><a href="technical-paper.html" aria-current="page">Technical paper</a><a href="privacy.html">Privacy</a><a href="support.html">Support</a></nav>
+    <a class="button button-small" href="index.html">Harbor home</a>
+  </header>
+
+  <main id="paper">
+    <header class="paper-hero">
+      <p class="eyebrow">Harbor technical paper · July 2026</p>
+      <h1>The iPhone<br>is the system.</h1>
+      <p class="paper-deck">How Harbor turns a conversation into durable knowledge with Apple silicon, on-device intelligence, and files the user—not an app service—owns.</p>
+      <div class="paper-meta"><span>Harbor 1.0</span><span>iOS 26</span><span>On-device by design</span><span>Zac Henson</span></div>
+    </header>
+
+    <div class="paper-shell">
+      <aside class="paper-toc" aria-label="Paper contents">
+        <p>Contents</p>
+        <ol>
+          <li><a href="#abstract">Abstract</a></li>
+          <li><a href="#system">The iPhone as system</a></li>
+          <li><a href="#capture">Capture</a></li>
+          <li><a href="#speech">Speech and speakers</a></li>
+          <li><a href="#intelligence">Foundation Models</a></li>
+          <li><a href="#continuity">Continuity and resilience</a></li>
+          <li><a href="#ownership">Files and ownership</a></li>
+          <li><a href="#ecosystem">Apple ecosystem</a></li>
+          <li><a href="#limits">Boundaries</a></li>
+          <li><a href="#references">References</a></li>
+        </ol>
+      </aside>
+
+      <article class="paper-article">
+        <section id="abstract">
+          <p class="paper-kicker">Abstract</p>
+          <h2>A voice app without a cloud in the middle.</h2>
+          <p>Most intelligent recorders are organized around a remote service: capture here, upload there, compute somewhere else, then return to an account-bound library. Harbor is organized around a different object—the iPhone itself. The phone captures the sound, performs speech recognition, separates speakers, generates useful notes, continues eligible work in the background, and writes the result into an ordinary Apple Files folder.</p>
+          <p>This is not privacy added after the product was designed. It is the consequence of choosing Apple’s on-device frameworks as the product architecture. Harbor has no developer-operated account, ingestion server, transcription endpoint, or AI minute meter. The user’s device is the compute boundary; <code>recording.json</code> is the canonical state; the selected Files location is the library.</p>
+          <blockquote><p>Harbor treats the iPhone not as a microphone for somebody else’s cloud, but as a complete personal computing system.</p></blockquote>
+        </section>
+
+        <section id="system">
+          <p class="paper-kicker">01 · Architecture</p>
+          <h2>One device, one coherent stack.</h2>
+          <p>Harbor’s pipeline is intentionally vertical. Each layer hands work to another capability already native to iOS, so audio does not need to cross a developer-controlled network boundary to become useful.</p>
+
+          <div class="architecture" aria-label="Harbor architecture layers">
+            <div class="architecture-row"><b>Experience</b><div><h3>SwiftUI</h3><p>Recording, library, transcript correction, speaker naming, maps, settings, and export.</p></div></div>
+            <div class="architecture-row"><b>Presence</b><div><h3>App Intents · WidgetKit · ActivityKit</h3><p>Siri and Shortcuts entry points, widgets, Lock Screen status, and Dynamic Island controls.</p></div></div>
+            <div class="architecture-row"><b>Capture</b><div><h3>AVFoundation · AVAudioEngine</h3><p>Microphone sessions, one-tap M4A recording, waveform data, and optional voice processing.</p></div></div>
+            <div class="architecture-row"><b>Understanding</b><div><h3>Speech · Core ML · Foundation Models</h3><p>Time-indexed transcription, speaker diarization, summaries, titles, and evidence-grounded suggestions.</p></div></div>
+            <div class="architecture-row"><b>Continuity</b><div><h3>Background Tasks</h3><p>Visible, cancellable continued processing with foreground recovery when scheduling is unavailable.</p></div></div>
+            <div class="architecture-row"><b>Place</b><div><h3>Files · iCloud Drive · FileManager</h3><p>Security-scoped folder access, one folder per recording, transactional writes, and optional Apple-managed sync.</p></div></div>
+            <div class="architecture-row is-harbor"><b>Product rule</b><div><h3>The file outlives the interface.</h3><p>Harbor can improve, move, or disappear; the user’s audio and structured data remain inspectable files.</p></div></div>
+          </div>
+
+          <div class="flow" aria-label="Harbor processing flow">
+            <article><span>01</span><h3>Record</h3><p>AVAudioEngine writes audio and feeds live analysis.</p></article>
+            <article><span>02</span><h3>Transcribe</h3><p>SpeechAnalyzer produces time-indexed text.</p></article>
+            <article><span>03</span><h3>Separate</h3><p>Core ML diarization finds speaker turns.</p></article>
+            <article><span>04</span><h3>Shape</h3><p>Foundation Models drafts title and notes.</p></article>
+            <article><span>05</span><h3>Keep</h3><p>Files receives canonical JSON and exports.</p></article>
+          </div>
+        </section>
+
+        <section id="capture">
+          <p class="paper-kicker">02 · Capture</p>
+          <h2>AVFoundation begins the chain.</h2>
+          <p>Harbor’s recorder is built around <strong>AVAudioSession</strong> and <strong>AVAudioEngine</strong>. A single input tap writes high-quality mono AAC audio to M4A while emitting the same captured buffers to the live-analysis pipeline. That shared origin matters: the waveform, provisional transcript, and durable recording all describe the same physical capture session.</p>
+          <p>The audio session uses Apple’s recording system rather than inventing its own device layer. It can accommodate built-in microphones and Bluetooth hands-free routes. Harbor’s Live Focus mode enables Apple voice processing when compatible hardware and routes make it available, reducing noise and echo before the sound enters later stages.</p>
+          <p>Harbor also preserves the original recording when optional enhancement is enabled. Enhancement runs through an offline <strong>AVAudioEngine</strong> graph and Apple audio units, producing a separate copy. The original remains the immutable point of reference.</p>
+        </section>
+
+        <section id="speech">
+          <p class="paper-kicker">03 · Speech and speakers</p>
+          <h2>Language becomes a timeline—on device.</h2>
+          <p>On iOS 26, Harbor uses Apple’s <strong>SpeechAnalyzer</strong> and <strong>SpeechTranscriber</strong> APIs. Live recording uses time-indexed progressive transcription; completed audio uses time-indexed transcription with alternatives. Harbor asks <strong>AssetInventory</strong> for the Apple-managed language assets needed for the current locale and installs them on first use when necessary.</p>
+          <p>Audio rarely arrives in exactly the format a speech model prefers. Harbor asks SpeechAnalyzer for the best available format, then uses <strong>AVAudioConverter</strong> to transform captured buffers before sending them through an asynchronous analyzer stream. Longer recordings are processed in bounded chunks so memory use remains predictable.</p>
+          <h3>Speaker separation through Core ML</h3>
+          <p>Apple’s Speech framework identifies words and time ranges, but it does not provide the speaker diarization Harbor needs. For that layer, Harbor uses <strong>FluidAudio 0.15.5</strong>, an open-source diarization pipeline executed locally with <strong>Core ML</strong>. Audio is analyzed in overlapping windows, speaker identities are reconciled across boundaries, and the resulting turns are aligned with Apple’s time-indexed transcript.</p>
+          <p>This is an important architectural distinction: FluidAudio is not a remote AI service and user audio is not sent to its developer. It is a model pipeline running inside Harbor’s process, accelerated by the Apple compute stack available on the device.</p>
+        </section>
+
+        <section id="intelligence">
+          <p class="paper-kicker">04 · Foundation Models</p>
+          <h2>Apple Intelligence, constrained by evidence.</h2>
+          <p>Once Harbor has a transcript and speaker timeline, it uses Apple’s on-device <strong>Foundation Models</strong> framework. <strong>SystemLanguageModel</strong> and <strong>LanguageModelSession</strong> draft titles, summaries, action items, and speaker-name suggestions without routing the conversation to a third-party language-model API.</p>
+          <p>On-device generation is only useful if it remains subordinate to the recording. Harbor therefore treats model output as a proposal, not authority. Structured generation is guided into known fields; temperatures are kept deterministic where appropriate; suggested quotations and speaker evidence are checked against the transcript; invalid or unsupported output is rejected. When the system model is unavailable—because of device capability, Apple Intelligence configuration, language, or another system condition—Harbor falls back to deterministic local logic and keeps the recording usable.</p>
+          <ul class="principles">
+            <li><strong>The transcript is evidence.</strong> Generated notes may summarize it, but cannot silently replace it.</li>
+            <li><strong>The user is the editor.</strong> Titles, speaker names, transcript sections, and summaries remain correctable.</li>
+            <li><strong>Availability is a state, not a crash.</strong> Model absence degrades a feature; it does not strand the recording.</li>
+          </ul>
+        </section>
+
+        <section id="continuity">
+          <p class="paper-kicker">05 · Continuity and resilience</p>
+          <h2>Save early. Enrich later. Retry only what failed.</h2>
+          <p>Speech and note generation can outlast the moment when a user leaves the app. Harbor integrates <strong>BGContinuedProcessingTask</strong> so eligible post-record work can continue with system-visible progress, a useful title and subtitle, cancellation, and expiration handling. Core processing is submitted with failure semantics when immediacy matters; enhancement can be queued. If the operating system cannot accept a continued-processing request, Harbor retains a foreground-owned path instead of pretending the work was scheduled.</p>
+          <p>Durability is staged. Live finalized transcript segments are checkpointed while recording. After capture ends, useful transcript data is promoted into canonical state before optional enrichment begins. If title generation fails, the transcript is not discarded. If diarization needs another pass, the audio is not re-recorded. Harbor retries the failed stage rather than collapsing the whole pipeline into one fragile transaction.</p>
+          <p>Artifact writes use staging files, backups, and recovery journals. A read problem from a Files provider does not immediately erase the last known library snapshot. These choices are less visible than a waveform, but they are the difference between an AI demo and a dependable personal archive.</p>
+        </section>
+
+        <section id="ownership">
+          <p class="paper-kicker">06 · Files and ownership</p>
+          <h2>The library is a folder, not an account.</h2>
+          <p>On first launch, Harbor asks the user to choose a parent location with Apple’s Files picker. That can be <strong>On My iPhone</strong> or <strong>iCloud Drive</strong>. Harbor retains permission through a security-scoped bookmark and creates one self-contained folder for each recording.</p>
+
+          <div class="file-tree" aria-label="Example Harbor recording folder">Harbor/
+└── Planning Session/
+    ├── Planning Session.m4a    original audio
+    ├── Enhanced.m4a            optional derived audio
+    ├── recording.json          canonical state
+    ├── Transcript.md           optional projection
+    ├── Notes.md                optional projection
+    └── Notes.docx              optional projection</div>
+
+          <p><code>recording.json</code> is the source of truth for identity, title, dates, optional location, transcript sections, speaker suggestions, notes, processing status, and timeline data. Markdown, RTF, and DOCX are projections that can be regenerated. This prevents a polished export from becoming more authoritative than the structured record that produced it.</p>
+          <p>If the user chooses iCloud Drive, Apple handles account identity, transfer, synchronization, recovery, and storage. Harbor’s developer still does not receive the content. That is the Apple ecosystem at its best: a user can choose cloud continuity without turning Harbor into a cloud service.</p>
+        </section>
+
+        <section id="ecosystem">
+          <p class="paper-kicker">07 · The Apple ecosystem</p>
+          <h2>One app, present wherever the moment begins.</h2>
+          <p>Harbor’s on-device design is not isolation. Apple’s frameworks let the same private workflow appear across the system without creating a parallel platform.</p>
+          <div class="stack-grid">
+            <article><h3>App Intents</h3><p>A discoverable Start Recording intent makes capture available to Siri and Shortcuts while preserving Harbor’s own recording lifecycle.</p></article>
+            <article><h3>WidgetKit</h3><p>Accessory widgets make Harbor visible at a glance and provide a lightweight route into recording.</p></article>
+            <article><h3>ActivityKit</h3><p>A Live Activity carries recording status to the Lock Screen and Dynamic Island, including a direct App Intent control to stop and save.</p></article>
+            <article><h3>Core Location + MapKit</h3><p>With permission, Harbor can attach an approximate place to a recording and render the personal archive geographically.</p></article>
+            <article><h3>Files + iCloud</h3><p>The library participates in the same document system users already trust across iPhone, iPad, and Mac.</p></article>
+            <article><h3>SwiftUI</h3><p>The app, settings, editing surfaces, and system-adjacent experiences share a native language and accessibility model.</p></article>
+          </div>
+          <blockquote><p>Apple’s stack lets Harbor be deeply integrated without becoming centrally hosted.</p></blockquote>
+          <p>That is the core celebration here. Apple silicon makes serious local inference practical. Speech turns sound into indexed language. Core ML opens the device’s heterogeneous compute to specialized models. Foundation Models brings a system language model into the app without adding an AI account. ActivityKit and App Intents make the workflow part of iOS. Files and iCloud give the result somewhere durable to live. Each framework is useful alone; together, they make a different product category possible.</p>
+        </section>
+
+        <section id="limits">
+          <p class="paper-kicker">08 · Honest boundaries</p>
+          <h2>On-device does not mean unconditional.</h2>
+          <p>Harbor’s architecture removes a developer-operated cloud from the intelligence path, but it does not remove the realities of system software.</p>
+          <ul>
+            <li>Apple speech assets and FluidAudio model files may need to download before first use.</li>
+            <li>Foundation Models availability depends on supported hardware, Apple Intelligence settings, language, region, and current system state.</li>
+            <li>Background execution remains scheduled and governed by iOS; Harbor can request and recover, not overrule the operating system.</li>
+            <li>Transcription, diarization, and generated notes are probabilistic. Harbor keeps them editable because no model is perfect.</li>
+            <li>Choosing iCloud Drive asks Apple’s service to sync the files. Choosing On My iPhone keeps the library local to the device.</li>
+          </ul>
+          <p>These are not exceptions to Harbor’s philosophy. They are why the app makes state visible, preserves source artifacts, validates model output, and gives the final word to the user.</p>
+        </section>
+
+        <section id="references">
+          <p class="paper-kicker">References</p>
+          <h2>Apple technologies in Harbor.</h2>
+          <ol class="references">
+            <li><a href="https://developer.apple.com/documentation/avfaudio/avaudioengine" rel="noreferrer">AVAudioEngine</a> and <a href="https://developer.apple.com/documentation/avfaudio/using-voice-processing" rel="noreferrer">Using voice processing</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/speech/speechanalyzer" rel="noreferrer">SpeechAnalyzer</a> and <a href="https://developer.apple.com/videos/play/wwdc2025/277/" rel="noreferrer">Bring advanced speech-to-text to your app with SpeechAnalyzer</a>, Apple.</li>
+            <li><a href="https://developer.apple.com/documentation/speech/assetinventory" rel="noreferrer">AssetInventory</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/coreml" rel="noreferrer">Core ML</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/foundationmodels" rel="noreferrer">Foundation Models</a>, <a href="https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel" rel="noreferrer">SystemLanguageModel</a>, and <a href="https://developer.apple.com/documentation/foundationmodels/languagemodelsession" rel="noreferrer">LanguageModelSession</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/backgroundtasks/performing-long-running-tasks-on-ios-and-ipados" rel="noreferrer">Performing long-running tasks on iOS and iPadOS</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/appintents/widgets-and-live-activities" rel="noreferrer">Making actions and content discoverable and widely available</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/widgetkit/dynamicisland" rel="noreferrer">Dynamic Island</a>, Apple Developer Documentation.</li>
+            <li><a href="https://developer.apple.com/documentation/foundation/filemanager" rel="noreferrer">FileManager</a> and <a href="https://developer.apple.com/documentation/uikit/uidocumentpickerviewcontroller" rel="noreferrer">UIDocumentPickerViewController</a>, Apple Developer Documentation.</li>
+            <li><a href="https://github.com/FluidInference/FluidAudio" rel="noreferrer">FluidAudio</a>, Fluid Inference, Apache License 2.0.</li>
+          </ol>
+        </section>
+      </article>
+    </div>
+
+    <section class="paper-coda">
+      <p class="eyebrow">Conclusion</p>
+      <h2>Personal computing,<br>taken personally.</h2>
+      <p>Harbor exists because the modern iPhone is powerful enough to understand a conversation—and because the Apple ecosystem is mature enough to let the result remain private, useful, and yours.</p>
+      <div class="actions"><a class="button" href="index.html">Explore Harbor</a><a class="text-link" href="privacy.html">Read the privacy policy →</a></div>
+    </section>
+  </main>
+</body>
+</html>
